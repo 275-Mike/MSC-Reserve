@@ -108,21 +108,26 @@
   }
 
   async function addOne(player, drink) {
-    try {
-      const body = JSON.stringify({ player, drink, ym: state.ym });
-      // Content-Type: text/plain vermeidet CORS-Preflight bei Apps Script
-      const r = await fetch(SCRIPT_URL, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' } });
-      const json = await r.json();
-      if (!json.ok && json.error) throw new Error(json.error);
-      // lokal hochzählen für snappiges UI
-      if (!state.sums[player]) state.sums[player] = { bier: 0, limo: 0 };
-      state.sums[player][drink]++;
-      render();
-      setStatus(`${player}: ${drink} gebucht.`, 'ok');
-    } catch (e) {
-      setStatus('Fehler beim Buchen: ' + e.message, 'err');
-    }
+  try {
+    const body = JSON.stringify({ player, drink, ym: state.ym });
+    const r = await fetch(SCRIPT_URL, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' } });
+    const json = await r.json();
+    if (!json.ok && json.error) throw new Error(json.error);
+
+    // Optimistisches Update für snappiges UI …
+    if (!state.sums[player]) state.sums[player] = { bier: 0, limo: 0 };
+    state.sums[player][drink]++;
+    render();
+
+    // … und danach die echten Summen nachladen
+    loadSums();
+
+    setStatus(`${player}: ${drink} gebucht.`, 'ok');
+  } catch (e) {
+    setStatus('Fehler beim Buchen: ' + e.message, 'err');
   }
+}
+
 
   function setStatus(msg, cls) {
     const el = $('#status');
