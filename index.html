@@ -35,12 +35,14 @@
     <button id="reload">Aktualisieren</button>
   </div>
 
-  <div class="grid hdr">
-    <div>Spieler</div>
-    <div>Bier</div>
-    <div>Limo</div>
-    <div>Aktion</div>
-  </div>
+  <div class="grid hdr" style="grid-template-columns: 1fr auto auto auto auto;">
+  <div>Spieler</div>
+  <div>Bier</div>
+  <div>Limo</div>
+  <div>Kosten</div>
+  <div>Aktion</div>
+</div>
+
   <div id="list"></div>
 
   <div class="totals" id="totals"></div>
@@ -61,35 +63,47 @@
 
   // ---- EINZIGER state ----
   const state = { ym: null, sums: {} };
+  const PRICES = {
+    bier: 1.5,   // Preis pro Bier
+    limo: 1.0    // Preis pro Limo
+  };
 
   function render() {
-    $('#ym').value = state.ym ?? '';
-    $('.month').textContent = `Monat: ${state.ym ?? '—'}`;
+  $('#ym').value = state.ym;
+  $('.month').textContent = `Monat: ${state.ym}`;
 
-    const root = document.getElementById('list');
-    root.innerHTML = '';
-    const totals = { bier: 0, limo: 0 };
+  const root = $('#list');
+  root.innerHTML = '';
+  const totals = { bier: 0, limo: 0, cost: 0 };
 
-    PLAYERS.forEach(name => {
-      const sum = state.sums[name] || { bier: 0, limo: 0 };
-      totals.bier += sum.bier; totals.limo += sum.limo;
+  PLAYERS.forEach(name => {
+    const sum = state.sums[name] || { bier: 0, limo: 0 };
+    const cost = sum.bier * PRICES.bier + sum.limo * PRICES.limo;
 
-      const row = document.createElement('div');
-      row.className = 'grid row';
-      row.innerHTML = `
-        <div>${name}</div>
-        <div class="xs" title="${sum.bier}x Bier">${xString(sum.bier)}</div>
-        <div class="xs" title="${sum.limo}x Limo">${xString(sum.limo)}</div>
-        <div>
-          <button data-name="${name}" data-drink="bier">+ Bier</button>
-          <button data-name="${name}" data-drink="limo">+ Limo</button>
-        </div>`;
-      root.appendChild(row);
-    });
+    totals.bier += sum.bier; 
+    totals.limo += sum.limo;
+    totals.cost += cost;
 
-    document.getElementById('totals').textContent =
-      `Gesamt im ${state.ym}: Bier ${totals.bier} · Limo ${totals.limo}`;
-  }
+    const row = document.createElement('div');
+    row.className = 'grid row';
+    row.style.gridTemplateColumns = "1fr auto auto auto auto"; // neue Spalte
+    row.innerHTML = `
+      <div>${name}</div>
+      <div class="xs" title="${sum.bier}x Bier">${xString(sum.bier)}</div>
+      <div class="xs" title="${sum.limo}x Limo">${xString(sum.limo)}</div>
+      <div>${cost.toFixed(2)} €</div>
+      <div>
+        <button data-name="${name}" data-drink="bier">+ Bier</button>
+        <button data-name="${name}" data-drink="limo">+ Limo</button>
+      </div>
+    `;
+    root.appendChild(row);
+  });
+
+  $('#totals').textContent = 
+    `Gesamt im ${state.ym}: Bier ${totals.bier} · Limo ${totals.limo} · Summe ${totals.cost.toFixed(2)} €`;
+}
+
 
   function setStatus(msg, cls) {
     const el = document.getElementById('status');
