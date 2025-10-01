@@ -49,29 +49,24 @@
 <script>
   // 👉 anpassen:
   const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxZwIfIfFUJkCx81RCxiLbCSJ8bpCyB5cIMY02T-D3sENPb1OaOSafGutl09VyXr8VQow/exec';
-  const PLAYERS = [
-    'Anna', 'Ben', 'Chris', 'Dana', 'Erik', 'Franziska', 'Gabi', 'Hugo'
-  ];
+  const PLAYERS = ['Anna','Ben','Chris','Dana','Erik','Franziska','Gabi','Hugo'];
 
-  const $ = sel => document.querySelector(sel);
-  const $$ = sel => Array.from(document.querySelectorAll(sel));
+  const $  = sel => document.querySelector(sel);
 
   function ymNow() {
     const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth()+1).padStart(2,'0');
-    return `${y}-${m}`;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   }
+  function xString(n){ return 'X'.repeat(Math.min(n,50)); }
 
-  function xString(n) { return 'X'.repeat(Math.min(n, 50)); }
-
-  const state = { ym: ymNow(), sums: {} };
+  // ---- EINZIGER state ----
+  const state = { ym: null, sums: {} };
 
   function render() {
-    $('#ym').value = state.ym;
-    $('.month').textContent = `Monat: ${state.ym}`;
+    $('#ym').value = state.ym ?? '';
+    $('.month').textContent = `Monat: ${state.ym ?? '—'}`;
 
-    const root = $('#list');
+    const root = document.getElementById('list');
     root.innerHTML = '';
     const totals = { bier: 0, limo: 0 };
 
@@ -88,18 +83,37 @@
         <div>
           <button data-name="${name}" data-drink="bier">+ Bier</button>
           <button data-name="${name}" data-drink="limo">+ Limo</button>
-        </div>
-      `;
+        </div>`;
       root.appendChild(row);
     });
 
-    $('#totals').textContent = `Gesamt im ${state.ym}: Bier ${totals.bier} · Limo ${totals.limo}`;
+    document.getElementById('totals').textContent =
+      `Gesamt im ${state.ym}: Bier ${totals.bier} · Limo ${totals.limo}`;
+  }
+
+  function setStatus(msg, cls) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'foot ' + (cls || '');
+  }
+
+  // ---- API ----
+  async function initMonth() {
+    try {
+      const r = await fetch(`${SCRIPT_URL}?action=months`);
+      const { latest } = await r.json();
+      state.ym = latest || ymNow();
+    } catch {
+      state.ym = ymNow(); // Fallback
+    }
   }
 
   async function loadSums() {
     try {
       const r = await fetch(`${SCRIPT_URL}?action=sum&ym=${encodeURIComponent(state.ym)}`);
-      state.sums = await r.json();
+      const data = await r.json();
+      if (data.ym) state.ym = data.ym;           // falls Server selbst bestimmt
+      state.sums = data.sums || data;            // rückwärtskompatibel
       render();
       setStatus('Aktualisiert.', 'ok');
     } catch (e) {
@@ -108,50 +122,47 @@
   }
 
   async function addOne(player, drink) {
-  try {
-    const body = JSON.stringify({ player, drink, ym: state.ym });
-    const r = await fetch(SCRIPT_URL, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' } });
-    const json = await r.json();
-    if (!json.ok && json.error) throw new Error(json.error);
+    try {
+      const body = JSON.stringify({ player, drink, ym: state.ym });
+      const r = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'text/plain' } // kein Preflight
+      });
+      const json = await r.json();
+      if (!json.ok && json.error) throw new Error(json.error);
 
-    // Optimistisches Update für snappiges UI …
-    if (!state.sums[player]) state.sums[player] = { bier: 0, limo: 0 };
-    state.sums[player][drink]++;
-    render();
+      // optimistisches Update
+      if (!state.sums[player]) state.sums[player] = { bier: 0, limo: 0 };
+      state.sums[player][drink]++;
+      render();
 
-    // … und danach die echten Summen nachladen
-    loadSums();
-
-    setStatus(`${player}: ${drink} gebucht.`, 'ok');
-  } catch (e) {
-    setStatus('Fehler beim Buchen: ' + e.message, 'err');
-  }
-}
-
-
-  function setStatus(msg, cls) {
-    const el = $('#status');
-    el.textContent = msg;
-    el.className = 'foot ' + (cls || '');
+      // danach die Wahrheit vom Server
+      loadSums();
+      setStatus(`${player}: ${drink} gebucht.`, 'ok');
+    } catch (e) {
+      setStatus('Fehler beim Buchen: ' + e.message, 'err');
+    }
   }
 
-  // Events
+  // ---- Events ----
   document.addEventListener('click', (ev) => {
     const btn = ev.target.closest('button[data-name]');
     if (!btn) return;
-    const player = btn.getAttribute('data-name');
-    const drink = btn.getAttribute('data-drink');
-    addOne(player, drink);
+    addOne(btn.getAttribute('data-name'), btn.getAttribute('data-drink'));
   });
 
-  $('#reload').addEventListener('click', () => {
-    state.ym = $('#ym').value || ymNow();
+  document.getElementById('reload').addEventListener('click', () => {
+    state.ym = document.getElementById('ym').value || ymNow();
     loadSums();
   });
 
-  // Init
-  $('#ym').value = state.ym;
-  loadSums();
+  // ---- Init ----
+  (async function () {
+    await initMonth();  // setzt state.ym auf den letzten vorhandenen Monat
+    await loadSums();   // lädt Summen für diesen Monat
+  })();
 </script>
+
 </body>
 </html>
