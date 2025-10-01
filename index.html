@@ -100,9 +100,17 @@
   });
 
   $('#totals').textContent = 
-    `Gesamt im ${state.ym}: Bier ${totals.bier} · Limo ${totals.limo} · Summe ${totals.cost.toFixed(2)} €`;
+  `Gesamt im ${formatYM(state.ym)}: Bier ${totals.bier} · Limo ${totals.limo} · Summe ${totals.cost.toFixed(2)} €`;
+
 }
 
+function formatYM(ym) {
+  if (!ym) return '';
+  const [y, m] = ym.split('-');
+  // JS-Date-Monat ist 0-basiert → -1
+  const d = new Date(Number(y), Number(m) - 1);
+  return d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
+}
 
   function setStatus(msg, cls) {
     const el = document.getElementById('status');
