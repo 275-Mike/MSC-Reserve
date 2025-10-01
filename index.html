@@ -64,7 +64,7 @@
   const state = { ym: null, sums: {} };
   const PRICES = {
     bier: 1.5,   // Preis pro Bier
-    limo: 1.0    // Preis pro Limo
+    limo: 1.5    // Preis pro Limo
   };
 
   function render() {
@@ -99,8 +99,16 @@
     root.appendChild(row);
   });
 
-  $('#totals').textContent = 
-  `Gesamt im ${formatYM(state.ym)}: Bier ${totals.bier} · Limo ${totals.limo} · Summe ${totals.cost.toFixed(2)} €`;
+  const EUR = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
+
+$('#totals').innerHTML = `
+  <div>Monat: ${formatYM(state.ym)}</div>
+  <div>Bier: ${totals.bier}</div>
+  <div>Limo: ${totals.limo}</div>
+  <div>Gesamt: ${totals.bier + totals.limo} Getränke</div>
+  <div>Summe: ${EUR.format(totals.cost)}</div>
+`;
+
 
 }
 
