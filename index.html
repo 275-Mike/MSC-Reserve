@@ -85,6 +85,7 @@ const PLAYERS = [
   'Winkler Pascal',
   'Gotsiridze Gega',
   'Fiebiger Sven',
+  'CO-Trainer',
   'ZADE'
 ];
 
@@ -94,7 +95,7 @@ const PLAYERS = [
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   }
-  function xString(n){ return 'X'.repeat(Math.min(n,50)); }
+  function xString(n){ return 'l'.repeat(Math.min(n,50)); }
   function formatYM(ym) {
     if (!ym) return '';
     const [y, m] = ym.split('-');
