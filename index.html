@@ -21,7 +21,7 @@
     .toolbar { display: flex; gap: .5rem; align-items: center; margin: .5rem 0 1rem 0; }
     input, select { padding: .35rem .5rem; border: 1px solid #ccc; border-radius: .5rem; }
 
-    /* hübscher Block für Fun-Stats */
+    /* Fun-Stats Block */
     .stats { margin-top: .75rem; padding: .75rem; background:#f7f7f7; border:1px solid #e6e6e6; border-radius:.5rem; }
     .stats b { font-weight:700; }
   </style>
@@ -57,37 +57,14 @@
 <script>
   // 👉 anpassen:
   const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMWGny_leMJQduC7nEL_yHH3sbaCjJ2NsXf3YUGRE2VEvvM0iIxxWsx3TaSBI58aYmIg/exec';
-const PLAYERS = [
-  'Moschitz Nico',
-  'Domenik Aichholzer',
-  'Bernsteiner Markus',
-  'Blaschitz Fabian',
-  'Blaschitz Sebastian',
-  'Demirci Gökhan',
-  'Frank Elias',
-  'Ilic Danijel',
-  'Kerschbaumer Sandro',
-  'Koch Rene',
-  'Käfinger Michael',
-  'Lackner Daniel',
-  'Lenuweit Marc',
-  'Lopez Fabio',
-  'Matanovic Anto',
-  'Modic Marko',
-  'Rexhaj Adrian',
-  'Secardi Manuel',
-  'Seiwald Noel',
-  'Selmanovic Amir',
-  'Strasser Stefan',
-  'Thaqi Shemsedin',
-  'Tschemernjak Fabian',
-  'Winkler Kevin',
-  'Winkler Pascal',
-  'Gotsiridze Gega',
-  'Fiebiger Sven',
-  'CO-Trainer',
-  'ZADE'
-];
+  const PLAYERS = [
+    'Moschitz Nico','Domenik Aichholzer','Bernsteiner Markus','Blaschitz Fabian','Blaschitz Sebastian',
+    'Demirci Gökhan','Frank Elias','Ilic Danijel','Kerschbaumer Sandro','Koch Rene','Käfinger Michael',
+    'Lackner Daniel','Lenuweit Marc','Lopez Fabio','Matanovic Anto','Modic Marko','Rexhaj Adrian',
+    'Secardi Manuel','Seiwald Noel','Selmanovic Amir','Strasser Stefan','Thaqi Shemsedin',
+    'Tschemernjak Fabian','Winkler Kevin','Winkler Pascal','Gotsiridze Gega','Fiebiger Sven',
+    'CO-Trainer','ZADE'
+  ];
 
   const $  = sel => document.querySelector(sel);
 
@@ -95,7 +72,7 @@ const PLAYERS = [
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   }
-  function xString(n){ return 'l'.repeat(Math.min(n,50)); }
+  function xString(n){ return 'X'.repeat(Math.min(n,50)); }
   function formatYM(ym) {
     if (!ym) return '';
     const [y, m] = ym.split('-');
@@ -109,7 +86,6 @@ const PLAYERS = [
   const EUR = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
 
   function render() {
-    // Monat in das Eingabefeld setzen
     $('#ym').value = state.ym;
 
     const root = $('#list');
@@ -139,7 +115,6 @@ const PLAYERS = [
       root.appendChild(row);
     });
 
-    // Totals als Block mit Zeilen
     $('#totals').innerHTML = `
       <div>Monat: ${formatYM(state.ym)}</div>
       <div>Bier: ${totals.bier}</div>
@@ -148,7 +123,6 @@ const PLAYERS = [
       <div>Summe: ${EUR.format(totals.cost)}</div>
     `;
 
-    // Fun-Stats unten
     renderFunStats();
   }
 
@@ -192,6 +166,44 @@ const PLAYERS = [
     el.className = 'foot ' + (cls || '');
   }
 
+  // Button kurz sperren, um Spam zu bremsen
+  function lockButton(btn, ms = 400) {
+    if (!btn) return;
+    btn.disabled = true;
+    setTimeout(() => { btn.disabled = false; }, ms);
+  }
+
+  // --- Optimistisches Buchen: sofort rendern, dann POST, dann nachladen ---
+  function addOne(player, drink, btnEl) {
+    // 1) Optimistisch hochzählen
+    if (!state.sums[player]) state.sums[player] = { bier: 0, limo: 0 };
+    const prev = { ...state.sums[player] }; // für Rollback
+    state.sums[player][drink]++;
+    render();                 // sofort sichtbar
+    lockButton(btnEl);
+    setStatus(`${player}: ${drink} gebucht (lokal)…`, 'ok');
+
+    // 2) Fire-and-forget Request
+    fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: JSON.stringify({ player, drink, ym: state.ym }),
+      headers: { 'Content-Type': 'text/plain' }
+    })
+    .then(r => r.json())
+    .then(json => {
+      if (!json.ok) throw new Error(json.error || 'Fehler');
+      // 3) Kurz darauf die „Wahrheit“ vom Server laden
+      setTimeout(loadSums, 250);
+      setStatus(`${player}: ${drink} gebucht.`, 'ok');
+    })
+    .catch(err => {
+      // Rollback
+      state.sums[player] = prev;
+      render();
+      setStatus(`Fehler beim Buchen: ${err.message}`, 'err');
+    });
+  }
+
   // ---- API ----
   async function initMonth() {
     try {
@@ -207,8 +219,8 @@ const PLAYERS = [
     try {
       const r = await fetch(`${SCRIPT_URL}?action=sum&ym=${encodeURIComponent(state.ym)}`);
       const data = await r.json();
-      if (data.ym) state.ym = data.ym;           // falls Server selbst bestimmt
-      state.sums = data.sums || data;            // rückwärtskompatibel
+      if (data.ym) state.ym = data.ym;
+      state.sums = data.sums || data;
       render();
       setStatus('Aktualisiert.', 'ok');
     } catch (e) {
@@ -216,38 +228,20 @@ const PLAYERS = [
     }
   }
 
-  async function addOne(player, drink) {
-    try {
-      const body = JSON.stringify({ player, drink, ym: state.ym });
-      const r = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body,
-        headers: { 'Content-Type': 'text/plain' } // kein Preflight
-      });
-      const json = await r.json();
-      if (!json.ok && json.error) throw new Error(json.error);
-
-      // optimistisches Update
-      if (!state.sums[player]) state.sums[player] = { bier: 0, limo: 0 };
-      state.sums[player][drink]++;
-      render();
-
-      // danach die Wahrheit vom Server
-      loadSums();
-      setStatus(`${player}: ${drink} gebucht.`, 'ok');
-    } catch (e) {
-      setStatus('Fehler beim Buchen: ' + e.message, 'err');
-    }
-  }
-
   // ---- Events ----
-  document.addEventListener('click', (ev) => {
+  // „Direkteres“ Feedback: pointerdown statt click (fühlt sich schneller an)
+  document.addEventListener('pointerdown', (ev) => {
     const btn = ev.target.closest('button[data-name]');
     if (!btn) return;
-    addOne(btn.getAttribute('data-name'), btn.getAttribute('data-drink'));
+    addOne(btn.getAttribute('data-name'), btn.getAttribute('data-drink'), btn);
   });
 
+  // Monat wechseln
   document.getElementById('reload').addEventListener('click', () => {
+    state.ym = document.getElementById('ym').value || ymNow();
+    loadSums();
+  });
+  document.getElementById('ym').addEventListener('change', () => {
     state.ym = document.getElementById('ym').value || ymNow();
     loadSums();
   });
