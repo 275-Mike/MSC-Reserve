@@ -72,7 +72,6 @@
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   }
-  function xString(n){ return 'X'.repeat(Math.min(n,50)); }
   function formatYM(ym) {
     if (!ym) return '';
     const [y, m] = ym.split('-');
@@ -106,8 +105,8 @@
       row.innerHTML = `
         <div>${name}</div>
         <div>${EUR.format(cost)}</div>
-        <div class="xs" title="${sum.bier}x Bier">${xString(sum.bier)}</div>
-        <div class="xs" title="${sum.limo}x Limo">${xString(sum.limo)}</div>
+        <div title="Bier">${sum.bier}</div>
+        <div title="Limo">${sum.limo}</div>
         <div>
           <button data-name="${name}" data-drink="bier">+ Bier</button>
           <button data-name="${name}" data-drink="limo">+ Limo</button>
@@ -145,10 +144,10 @@
     };
     const names = xs => xs.map(x => x.name).join(', ') || '—';
 
-    const mostTotal = maxBy(rows, 'total');   // Am meisten getrunken
-    const mostBier  = maxBy(rows, 'bier');    // Top Alkoholiker (🍺)
-    const mostLimo  = maxBy(rows, 'limo');    // Limo-König:in
-    const leastTot  = minBy(rows, 'total');   // Schlechteste für die Kasse
+    const mostTotal = maxBy(rows, 'total');
+    const mostBier  = maxBy(rows, 'bier');
+    const mostLimo  = maxBy(rows, 'limo');
+    const leastTot  = minBy(rows, 'total');
 
     $('#funstats').innerHTML = `
       <div class="stats">
@@ -173,8 +172,32 @@
     setTimeout(() => { btn.disabled = false; }, ms);
   }
 
-  // --- Optimistisches Buchen: sofort rendern, dann POST, dann nachladen ---
-  function addOne(player, drink, btnEl) {
+  // --- PIN Handling (Client) ---
+  function getStoredPin(name){
+    try { return localStorage.getItem('pin:' + name) || null; } catch { return null; }
+  }
+  function storePin(name, pin){
+    try { localStorage.setItem('pin:' + name, pin); } catch {}
+  }
+  function askForPin(name){
+    const val = prompt(`PIN für ${name} eingeben:`);
+    if (val === null) return null; // Abbruch
+    const trimmed = String(val).trim();
+    if (!trimmed) return null;
+    return trimmed;
+  }
+
+  async function addOne(player, drink, btnEl) {
+    // 0) PIN holen (aus localStorage oder prompt)
+    let code = getStoredPin(player);
+    if (!code){
+      code = askForPin(player);
+      if (!code){
+        setStatus('Abgebrochen (kein PIN eingegeben).', 'err');
+        return;
+      }
+    }
+
     // 1) Optimistisch hochzählen
     if (!state.sums[player]) state.sums[player] = { bier: 0, limo: 0 };
     const prev = { ...state.sums[player] }; // für Rollback
@@ -183,25 +206,72 @@
     lockButton(btnEl);
     setStatus(`${player}: ${drink} gebucht (lokal)…`, 'ok');
 
-    // 2) Fire-and-forget Request
-    fetch(SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({ player, drink, ym: state.ym }),
-      headers: { 'Content-Type': 'text/plain' }
-    })
-    .then(r => r.json())
-    .then(json => {
-      if (!json.ok) throw new Error(json.error || 'Fehler');
-      // 3) Kurz darauf die „Wahrheit“ vom Server laden
+    // 2) Request
+    try {
+      const r = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        body: JSON.stringify({ player, drink, ym: state.ym, code }),
+        headers: { 'Content-Type': 'text/plain' }
+      });
+      const json = await r.json();
+      if (!json.ok){
+        // falscher PIN/gesperrt – Rollback & evtl. neuen PIN abfragen
+        state.sums[player] = prev;
+        render();
+
+        if (json.error === 'LOCKED'){
+          const until = json.lockedUntil ? new Date(json.lockedUntil) : null;
+          const t = until ? until.toLocaleString('de-DE') : 'später';
+          setStatus(`GESPERRT: ${player} bis ${t}.`, 'err');
+          return;
+        }
+        if (json.error === 'BADPIN' || json.error === 'NOPIN'){
+          // PIN aus localStorage löschen und nochmal fragen
+          try { localStorage.removeItem('pin:' + player); } catch {}
+          setStatus(json.message || 'PIN falsch.', 'err');
+          const retry = askForPin(player);
+          if (!retry){
+            setStatus('Buchung abgebrochen.', 'err');
+            return;
+          }
+          // zweiter Versuch ohne Optimismus
+          const r2 = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({ player, drink, ym: state.ym, code: retry }),
+            headers: { 'Content-Type': 'text/plain' }
+          });
+          const j2 = await r2.json();
+          if (!j2.ok){
+            if (j2.error === 'LOCKED'){
+              const until = j2.lockedUntil ? new Date(j2.lockedUntil) : null;
+              const t = until ? until.toLocaleString('de-DE') : 'später';
+              setStatus(`GESPERRT: ${player} bis ${t}.`, 'err');
+            } else {
+              setStatus(j2.message || 'Buchung fehlgeschlagen.', 'err');
+            }
+            return;
+          }
+          // Erfolg – Summen nachladen, PIN merken
+          storePin(player, retry);
+          await loadSums();
+          setStatus(`${player}: ${drink} gebucht.`, 'ok');
+          return;
+        }
+
+        setStatus(json.message || 'Fehler beim Buchen.', 'err');
+        return;
+      }
+
+      // Erfolg – Summen nachladen, PIN ggf. merken
+      storePin(player, code);
       setTimeout(loadSums, 250);
       setStatus(`${player}: ${drink} gebucht.`, 'ok');
-    })
-    .catch(err => {
+    } catch (err) {
       // Rollback
       state.sums[player] = prev;
       render();
       setStatus(`Fehler beim Buchen: ${err.message}`, 'err');
-    });
+    }
   }
 
   // ---- API ----
@@ -229,7 +299,6 @@
   }
 
   // ---- Events ----
-  // „Direkteres“ Feedback: pointerdown statt click (fühlt sich schneller an)
   document.addEventListener('pointerdown', (ev) => {
     const btn = ev.target.closest('button[data-name]');
     if (!btn) return;
@@ -248,10 +317,11 @@
 
   // ---- Init ----
   (async function () {
-    await initMonth();  // setzt state.ym auf den letzten vorhandenen Monat
-    await loadSums();   // lädt Summen für diesen Monat
+    await initMonth();
+    await loadSums();
   })();
 </script>
+
 
 </body>
 </html>
