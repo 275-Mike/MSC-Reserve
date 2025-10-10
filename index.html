@@ -18,10 +18,9 @@
     .foot { color: #777; font-size: .9rem; margin-top: 1rem; }
     .ok { color: #0a0; }
     .err { color: #a00; }
-    .toolbar { display: flex; gap: .5rem; align-items: center; margin: .5rem 0 1rem 0; }
+    .toolbar { display: flex; gap: .5rem; align-items: center; margin: .5rem 0 1rem 0; flex-wrap: wrap; }
     input, select { padding: .35rem .5rem; border: 1px solid #ccc; border-radius: .5rem; }
 
-    /* Fun-Stats Block */
     .stats { margin-top: .75rem; padding: .75rem; background:#f7f7f7; border:1px solid #e6e6e6; border-radius:.5rem; }
     .stats b { font-weight:700; }
   </style>
@@ -40,6 +39,17 @@
     <button id="reload">Aktualisieren</button>
   </div>
 
+  <!-- Auth-Block -->
+  <div id="auth" class="toolbar">
+    <label>Spieler:
+      <select id="playerSel"></select>
+    </label>
+    <input id="pin" type="password" placeholder="PIN" />
+    <button id="loginBtn">Login</button>
+    <button id="logoutBtn" style="display:none;">Logout</button>
+    <span id="whoami" class="xs"></span>
+  </div>
+
   <div class="grid hdr" style="grid-template-columns: 1fr auto auto auto auto;">
     <div>Spieler</div>
     <div>Kosten</div>
@@ -55,8 +65,10 @@
   <div id="status" class="foot"></div>
 
 <script>
-  // 👉 anpassen:
-  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMWGny_leMJQduC7nEL_yHH3sbaCjJ2NsXf3YUGRE2VEvvM0iIxxWsx3TaSBI58aYmIg/exec';
+  // ---------- KONFIG ----------
+  // HIER deine veröffentlichte Apps-Script Web-App URL einsetzen:
+  const SCRIPT_URL = 'HIER-DEINE-APPS-SCRIPT-WEB-APP-URL-EINFÜGEN';
+
   const PLAYERS = [
     'Moschitz Nico','Domenik Aichholzer','Bernsteiner Markus','Blaschitz Fabian','Blaschitz Sebastian',
     'Demirci Gökhan','Frank Elias','Ilic Danijel','Kerschbaumer Sandro','Koch Rene','Käfinger Michael',
@@ -66,6 +78,7 @@
     'CO-Trainer','ZADE'
   ];
 
+  // ---------- Utils ----------
   const $  = sel => document.querySelector(sel);
 
   function ymNow() {
@@ -79,11 +92,62 @@
     return d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
   }
 
-  // ---- State & Preise ----
-  const state = { ym: null, sums: {} };
+  // ---------- State & Preise ----------
+  const state = { ym: null, sums: {}, me: null, token: null }; // me = Spielername
   const PRICES = { bier: 1.5, limo: 1.5 };
   const EUR = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
 
+  // ---------- Auth (Session) ----------
+  function saveSession(player, token){
+    try {
+      localStorage.setItem('sess:player', player);
+      localStorage.setItem('sess:token', token);
+    } catch {}
+    state.me = player;
+    state.token = token;
+    updateAuthUI();
+  }
+  function loadSession(){
+    try {
+      const p = localStorage.getItem('sess:player');
+      const t = localStorage.getItem('sess:token');
+      if (p && t){ state.me = p; state.token = t; }
+    } catch {}
+    updateAuthUI();
+  }
+  function clearSession(){
+    try {
+      localStorage.removeItem('sess:player');
+      localStorage.removeItem('sess:token');
+    } catch {}
+    state.me = null; state.token = null;
+    updateAuthUI(); render();
+  }
+  function updateAuthUI(){
+    $('#logoutBtn').style.display = state.token ? '' : 'none';
+    $('#loginBtn').style.display  = state.token ? 'none' : '';
+    $('#playerSel').disabled = !!state.token;
+    $('#pin').style.display = state.token ? 'none' : '';
+    $('#whoami').textContent = state.token ? `eingeloggt: ${state.me}` : '';
+  }
+  function fillPlayerSelect(){
+    const sel = $('#playerSel');
+    sel.innerHTML = PLAYERS.map(n => `<option>${n}</option>`).join('');
+  }
+
+  function setStatus(msg, cls) {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'foot ' + (cls || '');
+  }
+
+  function lockButton(btn, ms = 400) {
+    if (!btn) return;
+    btn.disabled = true;
+    setTimeout(() => { btn.disabled = false; }, ms);
+  }
+
+  // ---------- Render ----------
   function render() {
     $('#ym').value = state.ym;
 
@@ -101,15 +165,19 @@
 
       const row = document.createElement('div');
       row.className = 'grid row';
-      row.style.gridTemplateColumns = "1fr auto auto auto auto"; // 5 Spalten wie Header
+      row.style.gridTemplateColumns = "1fr auto auto auto auto";
+      const isMe = state.me && name === state.me;
+
       row.innerHTML = `
         <div>${name}</div>
         <div>${EUR.format(cost)}</div>
         <div title="Bier">${sum.bier}</div>
         <div title="Limo">${sum.limo}</div>
         <div>
-          <button data-name="${name}" data-drink="bier">+ Bier</button>
-          <button data-name="${name}" data-drink="limo">+ Limo</button>
+          ${isMe && state.token ? `
+            <button data-drink="bier">+ Bier</button>
+            <button data-drink="limo">+ Limo</button>
+          ` : `<span class="xs">—</span>`}
         </div>`;
       root.appendChild(row);
     });
@@ -159,129 +227,14 @@
     `;
   }
 
-  function setStatus(msg, cls) {
-    const el = document.getElementById('status');
-    el.textContent = msg;
-    el.className = 'foot ' + (cls || '');
-  }
-
-  // Button kurz sperren, um Spam zu bremsen
-  function lockButton(btn, ms = 400) {
-    if (!btn) return;
-    btn.disabled = true;
-    setTimeout(() => { btn.disabled = false; }, ms);
-  }
-
-  // --- PIN Handling (Client) ---
-  function getStoredPin(name){
-    try { return localStorage.getItem('pin:' + name) || null; } catch { return null; }
-  }
-  function storePin(name, pin){
-    try { localStorage.setItem('pin:' + name, pin); } catch {}
-  }
-  function askForPin(name){
-    const val = prompt(`PIN für ${name} eingeben:`);
-    if (val === null) return null; // Abbruch
-    const trimmed = String(val).trim();
-    if (!trimmed) return null;
-    return trimmed;
-  }
-
-  async function addOne(player, drink, btnEl) {
-    // 0) PIN holen (aus localStorage oder prompt)
-    let code = getStoredPin(player);
-    if (!code){
-      code = askForPin(player);
-      if (!code){
-        setStatus('Abgebrochen (kein PIN eingegeben).', 'err');
-        return;
-      }
-    }
-
-    // 1) Optimistisch hochzählen
-    if (!state.sums[player]) state.sums[player] = { bier: 0, limo: 0 };
-    const prev = { ...state.sums[player] }; // für Rollback
-    state.sums[player][drink]++;
-    render();                 // sofort sichtbar
-    lockButton(btnEl);
-    setStatus(`${player}: ${drink} gebucht (lokal)…`, 'ok');
-
-    // 2) Request
-    try {
-      const r = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        body: JSON.stringify({ player, drink, ym: state.ym, code }),
-        headers: { 'Content-Type': 'text/plain' }
-      });
-      const json = await r.json();
-      if (!json.ok){
-        // falscher PIN/gesperrt – Rollback & evtl. neuen PIN abfragen
-        state.sums[player] = prev;
-        render();
-
-        if (json.error === 'LOCKED'){
-          const until = json.lockedUntil ? new Date(json.lockedUntil) : null;
-          const t = until ? until.toLocaleString('de-DE') : 'später';
-          setStatus(`GESPERRT: ${player} bis ${t}.`, 'err');
-          return;
-        }
-        if (json.error === 'BADPIN' || json.error === 'NOPIN'){
-          // PIN aus localStorage löschen und nochmal fragen
-          try { localStorage.removeItem('pin:' + player); } catch {}
-          setStatus(json.message || 'PIN falsch.', 'err');
-          const retry = askForPin(player);
-          if (!retry){
-            setStatus('Buchung abgebrochen.', 'err');
-            return;
-          }
-          // zweiter Versuch ohne Optimismus
-          const r2 = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify({ player, drink, ym: state.ym, code: retry }),
-            headers: { 'Content-Type': 'text/plain' }
-          });
-          const j2 = await r2.json();
-          if (!j2.ok){
-            if (j2.error === 'LOCKED'){
-              const until = j2.lockedUntil ? new Date(j2.lockedUntil) : null;
-              const t = until ? until.toLocaleString('de-DE') : 'später';
-              setStatus(`GESPERRT: ${player} bis ${t}.`, 'err');
-            } else {
-              setStatus(j2.message || 'Buchung fehlgeschlagen.', 'err');
-            }
-            return;
-          }
-          // Erfolg – Summen nachladen, PIN merken
-          storePin(player, retry);
-          await loadSums();
-          setStatus(`${player}: ${drink} gebucht.`, 'ok');
-          return;
-        }
-
-        setStatus(json.message || 'Fehler beim Buchen.', 'err');
-        return;
-      }
-
-      // Erfolg – Summen nachladen, PIN ggf. merken
-      storePin(player, code);
-      setTimeout(loadSums, 250);
-      setStatus(`${player}: ${drink} gebucht.`, 'ok');
-    } catch (err) {
-      // Rollback
-      state.sums[player] = prev;
-      render();
-      setStatus(`Fehler beim Buchen: ${err.message}`, 'err');
-    }
-  }
-
-  // ---- API ----
+  // ---------- API ----------
   async function initMonth() {
     try {
       const r = await fetch(`${SCRIPT_URL}?action=months`);
       const { latest } = await r.json();
       state.ym = latest || ymNow();
     } catch {
-      state.ym = ymNow(); // Fallback
+      state.ym = ymNow();
     }
   }
 
@@ -298,14 +251,83 @@
     }
   }
 
-  // ---- Events ----
-  document.addEventListener('pointerdown', (ev) => {
-    const btn = ev.target.closest('button[data-name]');
-    if (!btn) return;
-    addOne(btn.getAttribute('data-name'), btn.getAttribute('data-drink'), btn);
+  // ---------- Login/Logout ----------
+  $('#loginBtn').addEventListener('click', async () => {
+    const player = $('#playerSel').value;
+    const code = $('#pin').value.trim();
+    if (!player || !code) return setStatus('Bitte Spieler & PIN.', 'err');
+
+    try{
+      const r = await fetch(SCRIPT_URL, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain'},
+        body: JSON.stringify({ action:'login', player, code })
+      });
+      const j = await r.json();
+      if (!j.ok) return setStatus(j.message || j.error || 'Login fehlgeschlagen.', 'err');
+      saveSession(j.player, j.token);
+      $('#pin').value = '';
+      setStatus('Login erfolgreich.', 'ok');
+      render();
+    } catch(e){
+      setStatus('Login Fehler: ' + e.message, 'err');
+    }
   });
 
-  // Monat wechseln
+  $('#logoutBtn').addEventListener('click', () => {
+    clearSession();
+    setStatus('Abgemeldet.', 'ok');
+  });
+
+  // ---------- Buchen ----------
+  async function addOne(drink, btnEl){
+    if (!state.token){
+      setStatus('Bitte zuerst einloggen.', 'err'); return;
+    }
+    if (!state.me){
+      setStatus('Kein Spieler im Profil.', 'err'); return;
+    }
+
+    // Optimistisches Update nur für mich
+    if (!state.sums[state.me]) state.sums[state.me] = { bier:0, limo:0 };
+    const prev = { ...state.sums[state.me] };
+    state.sums[state.me][drink]++;
+    render();
+    lockButton(btnEl);
+    setStatus(`${state.me}: ${drink} gebucht (lokal)…`, 'ok');
+
+    try{
+      const r = await fetch(SCRIPT_URL, {
+        method:'POST',
+        headers:{ 'Content-Type':'text/plain' },
+        body: JSON.stringify({ action:'book', token: state.token, drink, ym: state.ym })
+      });
+      const j = await r.json();
+      if (!j.ok){
+        state.sums[state.me] = prev; render();
+        if (j.error === 'EXPIRED' || j.error === 'BAD_SIG' || j.error === 'BAD_FORMAT'){
+          clearSession();
+          setStatus('Session abgelaufen. Bitte neu einloggen.', 'err');
+        } else {
+          setStatus(j.message || 'Buchung abgelehnt.', 'err');
+        }
+        return;
+      }
+      setTimeout(loadSums, 250);
+      setStatus(`${state.me}: ${drink} gebucht.`, 'ok');
+    } catch(err){
+      state.sums[state.me] = prev; render();
+      setStatus(`Fehler beim Buchen: ${err.message}`, 'err');
+    }
+  }
+
+  // ---------- Events ----------
+  document.addEventListener('pointerdown', (ev) => {
+    const btn = ev.target.closest('button[data-drink]');
+    if (!btn) return;
+    addOne(btn.getAttribute('data-drink'), btn);
+  });
+
   document.getElementById('reload').addEventListener('click', () => {
     state.ym = document.getElementById('ym').value || ymNow();
     loadSums();
@@ -315,13 +337,14 @@
     loadSums();
   });
 
-  // ---- Init ----
+  // ---------- Init ----------
   (async function () {
+    loadSession();
+    fillPlayerSelect();
     await initMonth();
     await loadSums();
   })();
 </script>
-
 
 </body>
 </html>
