@@ -20,7 +20,6 @@
     .err { color: #a00; }
     .toolbar { display: flex; gap: .5rem; align-items: center; margin: .5rem 0 1rem 0; flex-wrap: wrap; }
     input, select { padding: .35rem .5rem; border: 1px solid #ccc; border-radius: .5rem; }
-
     .stats { margin-top: .75rem; padding: .75rem; background:#f7f7f7; border:1px solid #e6e6e6; border-radius:.5rem; }
     .stats b { font-weight:700; }
   </style>
@@ -32,14 +31,7 @@
     Getränkeliste - MSC Reserve
   </h1>
 
-  <div class="toolbar">
-    <label>Monat:
-      <input id="ym" type="month" />
-    </label>
-    <button id="reload">Aktualisieren</button>
-  </div>
-
-  <!-- Auth-Block -->
+  <!-- Login -->
   <div id="auth" class="toolbar">
     <label>Spieler:
       <select id="playerSel"></select>
@@ -50,6 +42,7 @@
     <span id="whoami" class="xs"></span>
   </div>
 
+  <!-- Tabelle -->
   <div class="grid hdr" style="grid-template-columns: 1fr auto auto auto auto;">
     <div>Spieler</div>
     <div>Kosten</div>
@@ -66,7 +59,6 @@
 
 <script>
   // ---------- KONFIG ----------
-  // HIER deine veröffentlichte Apps-Script Web-App URL einsetzen:
   const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCSkRg0OsfL4omyRz21oQff6Rht4xSiNMqbwVyhlaUHkSs_T3p46dWevYBsYzRmKOD6Q/exec';
 
   const PLAYERS = [
@@ -81,45 +73,27 @@
   // ---------- Utils ----------
   const $  = sel => document.querySelector(sel);
 
-  function ymNow() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-  }
-  function formatYM(ym) {
-    if (!ym) return '';
-    const [y, m] = ym.split('-');
-    const d = new Date(Number(y), Number(m) - 1);
-    return d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
-  }
-
-  // ---------- State & Preise ----------
-  const state = { ym: null, sums: {}, me: null, token: null }; // me = Spielername
+  // ---------- State ----------
+  const state = { ym: null, sums: {}, me: null, token: null };
   const PRICES = { bier: 1.5, limo: 1.5 };
   const EUR = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
 
-  // ---------- Auth (Session) ----------
+  // ---------- Auth ----------
   function saveSession(player, token){
-    try {
-      localStorage.setItem('sess:player', player);
-      localStorage.setItem('sess:token', token);
-    } catch {}
+    localStorage.setItem('sess:player', player);
+    localStorage.setItem('sess:token', token);
     state.me = player;
     state.token = token;
     updateAuthUI();
   }
   function loadSession(){
-    try {
-      const p = localStorage.getItem('sess:player');
-      const t = localStorage.getItem('sess:token');
-      if (p && t){ state.me = p; state.token = t; }
-    } catch {}
+    state.me = localStorage.getItem('sess:player');
+    state.token = localStorage.getItem('sess:token');
     updateAuthUI();
   }
   function clearSession(){
-    try {
-      localStorage.removeItem('sess:player');
-      localStorage.removeItem('sess:token');
-    } catch {}
+    localStorage.removeItem('sess:player');
+    localStorage.removeItem('sess:token');
     state.me = null; state.token = null;
     updateAuthUI(); render();
   }
@@ -131,8 +105,7 @@
     $('#whoami').textContent = state.token ? `eingeloggt: ${state.me}` : '';
   }
   function fillPlayerSelect(){
-    const sel = $('#playerSel');
-    sel.innerHTML = PLAYERS.map(n => `<option>${n}</option>`).join('');
+    $('#playerSel').innerHTML = PLAYERS.map(n => `<option>${n}</option>`).join('');
   }
 
   function setStatus(msg, cls) {
@@ -149,8 +122,6 @@
 
   // ---------- Render ----------
   function render() {
-    $('#ym').value = state.ym;
-
     const root = $('#list');
     root.innerHTML = '';
     const totals = { bier: 0, limo: 0, cost: 0 };
@@ -171,8 +142,8 @@
       row.innerHTML = `
         <div>${name}</div>
         <div>${EUR.format(cost)}</div>
-        <div title="Bier">${sum.bier}</div>
-        <div title="Limo">${sum.limo}</div>
+        <div>${sum.bier}</div>
+        <div>${sum.limo}</div>
         <div>
           ${isMe && state.token ? `
             <button data-drink="bier">+ Bier</button>
@@ -183,7 +154,6 @@
     });
 
     $('#totals').innerHTML = `
-      <div>Monat: ${formatYM(state.ym)}</div>
       <div>Bier: ${totals.bier}</div>
       <div>Limo: ${totals.limo}</div>
       <div>Gesamt: ${totals.bier + totals.limo} Getränke</div>
@@ -200,14 +170,11 @@
     });
 
     const maxBy = (arr, key) => {
-      const vals = arr.map(o => o[key]);
-      const max = Math.max(...vals, 0);
+      const max = Math.max(...arr.map(o => o[key]), 0);
       return { value: max, items: arr.filter(o => o[key] === max) };
     };
     const minBy = (arr, key) => {
-      if (!arr.length) return { value: 0, items: [] };
-      const vals = arr.map(o => o[key]);
-      const min = Math.min(...vals);
+      const min = Math.min(...arr.map(o => o[key]));
       return { value: min, items: arr.filter(o => o[key] === min) };
     };
     const names = xs => xs.map(x => x.name).join(', ') || '—';
@@ -219,10 +186,10 @@
 
     $('#funstats').innerHTML = `
       <div class="stats">
-        <div>Am meisten getrunken in <b>${formatYM(state.ym)}</b> hat: <b>${names(mostTotal.items)}</b> (${mostTotal.value} Getränke)</div>
-        <div>Top „Alkoholiker“ 🍺 und unser Bierkapitän: <b>${names(mostBier.items)}</b> (${mostBier.value} Bier)</div>
-        <div>Bei der Limo am fleißigsten 🥤: <b>${names(mostLimo.items)}</b> (${mostLimo.value} Limos)</div>
-        <div>Am schlechtesten für die Mannschaftskasse 💸: <b>${names(leastTot.items)}</b> (${leastTot.value} Getränke)</div>
+        <div>Am meisten getrunken: <b>${names(mostTotal.items)}</b> (${mostTotal.value})</div>
+        <div>Top „Alkoholiker“ 🍺: <b>${names(mostBier.items)}</b> (${mostBier.value} Bier)</div>
+        <div>Fleißigste Limo-Trinker 🥤: <b>${names(mostLimo.items)}</b> (${mostLimo.value} Limos)</div>
+        <div>Wenigster Konsum 💸: <b>${names(leastTot.items)}</b> (${leastTot.value} Getränke)</div>
       </div>
     `;
   }
@@ -232,9 +199,9 @@
     try {
       const r = await fetch(`${SCRIPT_URL}?action=months`);
       const { latest } = await r.json();
-      state.ym = latest || ymNow();
+      state.ym = latest;
     } catch {
-      state.ym = ymNow();
+      state.ym = null;
     }
   }
 
@@ -242,7 +209,6 @@
     try {
       const r = await fetch(`${SCRIPT_URL}?action=sum&ym=${encodeURIComponent(state.ym)}`);
       const data = await r.json();
-      if (data.ym) state.ym = data.ym;
       state.sums = data.sums || data;
       render();
       setStatus('Aktualisiert.', 'ok');
@@ -251,7 +217,7 @@
     }
   }
 
-  // ---------- Login/Logout ----------
+  // ---------- Login ----------
   $('#loginBtn').addEventListener('click', async () => {
     const player = $('#playerSel').value;
     const code = $('#pin').value.trim();
@@ -281,14 +247,9 @@
 
   // ---------- Buchen ----------
   async function addOne(drink, btnEl){
-    if (!state.token){
-      setStatus('Bitte zuerst einloggen.', 'err'); return;
-    }
-    if (!state.me){
-      setStatus('Kein Spieler im Profil.', 'err'); return;
-    }
+    if (!state.token) return setStatus('Bitte zuerst einloggen.', 'err');
+    if (!state.me) return setStatus('Kein Spieler im Profil.', 'err');
 
-    // Optimistisches Update nur für mich
     if (!state.sums[state.me]) state.sums[state.me] = { bier:0, limo:0 };
     const prev = { ...state.sums[state.me] };
     state.sums[state.me][drink]++;
@@ -305,7 +266,7 @@
       const j = await r.json();
       if (!j.ok){
         state.sums[state.me] = prev; render();
-        if (j.error === 'EXPIRED' || j.error === 'BAD_SIG' || j.error === 'BAD_FORMAT'){
+        if (['EXPIRED','BAD_SIG','BAD_FORMAT'].includes(j.error)){
           clearSession();
           setStatus('Session abgelaufen. Bitte neu einloggen.', 'err');
         } else {
@@ -324,17 +285,7 @@
   // ---------- Events ----------
   document.addEventListener('pointerdown', (ev) => {
     const btn = ev.target.closest('button[data-drink]');
-    if (!btn) return;
-    addOne(btn.getAttribute('data-drink'), btn);
-  });
-
-  document.getElementById('reload').addEventListener('click', () => {
-    state.ym = document.getElementById('ym').value || ymNow();
-    loadSums();
-  });
-  document.getElementById('ym').addEventListener('change', () => {
-    state.ym = document.getElementById('ym').value || ymNow();
-    loadSums();
+    if (btn) addOne(btn.getAttribute('data-drink'), btn);
   });
 
   // ---------- Init ----------
